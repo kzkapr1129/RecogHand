@@ -17,6 +17,7 @@
 
 // CONST
 static const float MIN_FINGER_TOP_LENGTH = 30;
+static const float MAX_FINGER_WIDTH = 100;
 
 // STRUCT
 struct Finger {
@@ -126,8 +127,7 @@ void Processor::recog(const cv::Mat& input, cv::Mat& output) {
     cv::line(output, cv::Point(0, 0), cv::Point(span, 0), cv::Scalar(255, 0, 0), 2);
 
     // 面積の上位２つのうち、どちらが手かを判別する
-    int handAreaIdx = -1;
-    std::vector<Finger> areafingers[2];
+    std::pair<int, size_t> handIndex(-1, 0);
     for (int i = 0; i < 2 && areaRanking[i].first >= 0; i++) {
         const std::vector<cv::Point>& points = contours[areaRanking[i].first];
 
@@ -179,41 +179,47 @@ void Processor::recog(const cv::Mat& input, cv::Mat& output) {
                         float dot = dotProduct(points[ss], points[se], points[es], points[ee]);
                         if (dot > 0.85) {
                             
-                            cv::circle(output, c, 10, cv::Scalar(0, 255, 0), -1);
-                            cv::line(output, points[ss], points[se], cv::Scalar(0, 255, 255), 2);
-                            cv::line(output, points[es], points[ee], cv::Scalar(0, 255, 255), 2);
-                            printf("angle(%d, %d) rad=%f\n", angle, angle2, dot);
-                            
-                            cv::circle(output, points[ss], 10, cv::Scalar(255, 255, 0), -1);
-                            cv::circle(output, points[es], 10, cv::Scalar(255, 255, 0), -1);
-                            cv::circle(output, points[se], 10, cv::Scalar(255, 255, 255), -1);
-                            cv::circle(output, points[ee], 10, cv::Scalar(255, 255, 255), -1);
-                            
-                            Finger finger;
-                            finger.top = c;
-                            finger.root = points[se] + points[ee];
-                            finger.root.x /= 2;
-                            finger.root.y /= 2;
-                            fingers.push_back(finger);
-
-                            cv::line(output, finger.top, finger.root, cv::Scalar(0, 0, 255), 10);
-                            
-                            start += span - 1;
+                            float topLength = calcDistance(points[ss], points[es]);
+                            if (topLength < MAX_FINGER_WIDTH) {
+                                float bottomLength = calcDistance(points[se], points[ee]);
+                                if (bottomLength < MAX_FINGER_WIDTH) {
+                                    cv::circle(output, c, 10, cv::Scalar(0, 255, 0), -1);
+                                    cv::line(output, points[ss], points[se], cv::Scalar(0, 255, 255), 2);
+                                    cv::line(output, points[es], points[ee], cv::Scalar(0, 255, 255), 2);
+                                    printf("angle(%d, %d) rad=%f\n", angle, angle2, dot);
+                                    
+                                    cv::circle(output, points[ss], 10, cv::Scalar(255, 255, 0), -1);
+                                    cv::circle(output, points[es], 10, cv::Scalar(255, 255, 0), -1);
+                                    cv::circle(output, points[se], 10, cv::Scalar(255, 255, 255), -1);
+                                    cv::circle(output, points[ee], 10, cv::Scalar(255, 255, 255), -1);
+                                    
+                                    Finger finger;
+                                    finger.top = c;
+                                    finger.root = points[se] + points[ee];
+                                    finger.root.x /= 2;
+                                    finger.root.y /= 2;
+                                    fingers.push_back(finger);
+                                    
+                                    cv::line(output, finger.top, finger.root, cv::Scalar(0, 0, 255), 10);
+                                    
+                                    start += span - 1;
+                                }
+                            }
                         }
                     }
                 }
             }
         }
         
-        areafingers[i] = fingers;
-        if (handAreaIdx < 0 || areafingers[handAreaIdx].size() < fingers.size()) {
-            handAreaIdx = i;
+        if (0 < fingers.size() && ((handIndex.first < 0) || (handIndex.second < fingers.size()))) {
+            handIndex.first = i;
+            handIndex.second = fingers.size();
         }
     }
     
     // 手にフォーカスを当てる(バウンディングボックスを描画する)
-    if (handAreaIdx >= 0) {
-        int cIndex = areaRanking[handAreaIdx].first;
+    if (handIndex.first >= 0) {
+        int cIndex = areaRanking[handIndex.first].first;
         cv::Rect brect = cv::boundingRect(contours[cIndex]);
         cv::rectangle(output, brect.tl(), brect.br(), cv::Scalar(0, 0, 255), 2);
     }
