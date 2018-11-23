@@ -17,11 +17,15 @@
 
 // CONST
 static const float MIN_FINGER_TOP_LENGTH = 30;
-static const float MIN_FINGER_LENGTH = 50;
 
-
-// GLOBAL
-cv::CascadeClassifier gClassifier("/Users/nakayama/cpp_test/RecogHand/RecogHand/haarcascade_eye.xml");
+// STRUCT
+struct Finger {
+    cv::Point root;
+    cv::Point top;
+    
+    Finger() {}
+    Finger(const cv::Point& r, const cv::Point& t) : root(r), top(t) {}
+};
 
 void Processor::swapIfBigger(std::pair<int, double>& a, std::pair<int, double>& b) {
     if (a.second < b.second) {
@@ -60,54 +64,6 @@ float Processor::calcDistance(const cv::Point& p1, const cv::Point& p2) {
     dist = p1.y - p2.y;
     dist2 += dist * dist;
     return sqrt(dist2);
-}
-
-bool Processor::selectFinger(const std::vector<std::pair<cv::Point, CornerType>>& corners,
-                             std::vector<std::pair<Finger, double>>& fingerCandidates) {
-    
-    int lenCorners = (int)(corners.size());
-    for (int i = 0; i < lenCorners; i++) {
-        const std::pair<cv::Point, CornerType>& top = corners[i];
-        if (top.second == CONVEX) {
-            int rootIndex = i - 1 < 0 ? lenCorners - 1 : i - 1;
-            if (corners[rootIndex].second != CONCAVE) {
-                rootIndex = lenCorners <= i + 1 ? 0 : i + 1;
-                if (corners[rootIndex].second != CONCAVE) {
-                    continue;
-                }
-            }
-            
-            const std::pair<cv::Point, CornerType>& root = corners[rootIndex];
-            
-            float distance = calcDistance(top.first, root.first);
-            if (MIN_FINGER_LENGTH < distance) {
-                float rad = 2 * M_PI + atan2(root.first.y - top.first.y, top.first.x - root.first.x);
-                float angle = rad_to_deg(rad);
-                Finger finger(root.first, top.first);
-                std::pair<Finger, float> fingerCandidate(finger, angle);
-                fingerCandidates.push_back(fingerCandidate);
-            }
-        }
-    }
-    
-    return false;
-}
-
-double Processor::dispersionByAngle(const std::vector<std::pair<Finger, double>>& fingers) {
-    double angleSum = 0;
-    for (int i = 0; i < fingers.size(); i++) {
-        angleSum += fingers[i].second;
-    }
-    
-    double angleAverage = angleSum / (double)fingers.size();
-    double dispersion = 0;
-    
-    for (int i = 0; i < fingers.size(); i++) {
-        double sd = fingers[i].second - angleAverage;
-        dispersion += (sd * sd);
-    }
-    
-    return dispersion / (double)fingers.size();
 }
 
 float Processor::dotProduct(const cv::Point& s1, const cv::Point& e1,
@@ -162,18 +118,21 @@ void Processor::recog(const cv::Mat& input, cv::Mat& output) {
     }
     
     // 輪郭線の描画
-    cv::drawContours(output, contours, areaRanking[0].first, cv::Scalar(255, 0, 0), 2);
-    cv::drawContours(output, contours, areaRanking[1].first, cv::Scalar(255, 255, 0), 2);
+    //cv::drawContours(output, contours, areaRanking[0].first, cv::Scalar(255, 0, 0), 2);
+    //cv::drawContours(output, contours, areaRanking[1].first, cv::Scalar(255, 255, 0), 2);
     
     // デバック情報の描画
     const int span = 100;
     cv::line(output, cv::Point(0, 0), cv::Point(span, 0), cv::Scalar(255, 0, 0), 2);
 
     // 面積の上位２つのうち、どちらが手かを判別する
+    int handAreaIdx = -1;
+    std::vector<Finger> areafingers[2];
     for (int i = 0; i < 2 && areaRanking[i].first >= 0; i++) {
         const std::vector<cv::Point>& points = contours[areaRanking[i].first];
 
         int numPoints = (int)points.size();
+        std::vector<Finger> fingers;
         for (int start = 0; start < numPoints; start++) {
             int cindex = (start + (span / 2)) % points.size();
             int eindex = (start + span) % points.size();
@@ -219,9 +178,10 @@ void Processor::recog(const cv::Mat& input, cv::Mat& output) {
                     if (straight_s && straight_e) {
                         float dot = dotProduct(points[ss], points[se], points[es], points[ee]);
                         if (dot > 0.85) {
+                            
                             cv::circle(output, c, 10, cv::Scalar(0, 255, 0), -1);
-                            cv::line(output, points[ss], points[se], cv::Scalar(0, 0, 255), 2);
-                            cv::line(output, points[es], points[ee], cv::Scalar(0, 0, 255), 2);
+                            cv::line(output, points[ss], points[se], cv::Scalar(0, 255, 255), 2);
+                            cv::line(output, points[es], points[ee], cv::Scalar(0, 255, 255), 2);
                             printf("angle(%d, %d) rad=%f\n", angle, angle2, dot);
                             
                             cv::circle(output, points[ss], 10, cv::Scalar(255, 255, 0), -1);
@@ -229,14 +189,35 @@ void Processor::recog(const cv::Mat& input, cv::Mat& output) {
                             cv::circle(output, points[se], 10, cv::Scalar(255, 255, 255), -1);
                             cv::circle(output, points[ee], 10, cv::Scalar(255, 255, 255), -1);
                             
+                            Finger finger;
+                            finger.top = c;
+                            finger.root = points[se] + points[ee];
+                            finger.root.x /= 2;
+                            finger.root.y /= 2;
+                            fingers.push_back(finger);
+
+                            cv::line(output, finger.top, finger.root, cv::Scalar(0, 0, 255), 10);
+                            
                             start += span - 1;
                         }
                     }
                 }
             }
         }
+        
+        areafingers[i] = fingers;
+        if (handAreaIdx < 0 || areafingers[handAreaIdx].size() < fingers.size()) {
+            handAreaIdx = i;
+        }
     }
-
+    
+    // 手にフォーカスを当てる(バウンディングボックスを描画する)
+    if (handAreaIdx >= 0) {
+        int cIndex = areaRanking[handAreaIdx].first;
+        cv::Rect brect = cv::boundingRect(contours[cIndex]);
+        cv::rectangle(output, brect.tl(), brect.br(), cv::Scalar(0, 0, 255), 2);
+    }
+    
     cv::cvtColor(hand_bin, hand_bin, CV_GRAY2BGR);
     cv::resize(hand_bin, hand_bin, cv::Size(), 0.2, 0.2);
     cv::Rect roi_rect(output.cols - hand_bin.cols, output.rows - hand_bin.rows, hand_bin.cols, hand_bin.rows);
