@@ -55,7 +55,7 @@ void Processor::extractSkin(const cv::Mat& frame, cv::Mat& dst) {
 int Processor::calcThreePointAngle(const cv::Point& a, const cv::Point& b, const cv::Point& c) {
     float rad1 = 2 * M_PI + atan2(b.y - a.y, a.x - b.x);
     float rad2 = 2 * M_PI + atan2(b.y - c.y, c.x - b.x);
-    int angle rad_to_deg(rad1 - rad2);
+    int angle = rad_to_deg(rad1 - rad2);
     return angle % 360;
 }
 
@@ -223,12 +223,11 @@ void Processor::recog(const cv::Mat& input, cv::Mat& output) {
         cv::Rect brect = cv::boundingRect(contours[cIndex]);
         cv::rectangle(output, brect.tl(), brect.br(), cv::Scalar(0, 0, 255), 2);
     }
-    
+
     cv::cvtColor(hand_bin, hand_bin, CV_GRAY2BGR);
     cv::resize(hand_bin, hand_bin, cv::Size(), 0.2, 0.2);
     cv::Rect roi_rect(output.cols - hand_bin.cols, output.rows - hand_bin.rows, hand_bin.cols, hand_bin.rows);
     cv::Mat roi = output(roi_rect);
     hand_bin.copyTo(roi);
-    
 }
 
